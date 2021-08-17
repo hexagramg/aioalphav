@@ -1,1 +1,2 @@
-from requests_base import API_KEY
+from aioalphav.requests_base import Config, Requests
+from aioalphav.ticker import Ticker

@@ -28,7 +28,7 @@ def many_tickers_func():
     return [aioav.Ticker('nvda').time_series_daily() for _ in range(10)]
 
 def test_time_series_daily(ticker, config):
-    d = loop.run_until_complete(ticker.time_series_daily())
+    d = loop.run_until_complete(ticker.company_overview())
     assert d is not None
 
 

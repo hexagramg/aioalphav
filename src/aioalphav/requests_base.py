@@ -6,26 +6,31 @@ from time import monotonic
 from functools import wraps
 import aiohttp.web as aioweb
 import logging
+import json
+from datetime import datetime
+
 
 class Config:
     internal: Optional[Config] = None
-    def __init__(self, api_key, requests_per_minute, retries):
 
+    def __init__(self, api_key, requests_per_minute, retries):
         self.api_key = api_key
         self.lock = requests_per_minute
         self.retries = retries
 
     @classmethod
-    def create(cls, api_key, requests_per_minute=5, retries = 3):
+    def create(cls, api_key, requests_per_minute=5, retries=3):
         if Config.internal is None:
             Config.internal = cls(api_key, requests_per_minute, retries)
         return Config.internal
+
 
 class Limit:
     """
     alpha vantage has plans that require having limiters per minute on requests
     here is the decorator class that returns wrapper on call
     """
+
     def __init__(self, wait_time=60):
         self.num_calls = 0
         self.time_reset = 0
@@ -33,7 +38,7 @@ class Limit:
         self.wait = wait_time
 
     def _diff(self):
-        return  self.time_reset - self.timer()
+        return self.time_reset - self.timer()
 
     def _update(self):
         self.time_reset = self.timer() + self.wait
@@ -56,14 +61,14 @@ class Limit:
                     await asyncio.sleep(self._diff())
 
             return await func(*args, **kwargs)
-        return wrapper
 
+        return wrapper
 
 
 class Requests:
 
     @staticmethod
-    def url_from_params(params:dict):
+    def url_from_params(params: dict):
         base = 'https://www.alphavantage.co/query?'
         params['apikey'] = Config.internal.api_key
         postfix = [f'{key}={item}' for key, item in params.items()]
@@ -71,24 +76,47 @@ class Requests:
         return base
 
     @staticmethod
-    async def get_json(params:dict):
+    async def get_json(params: dict):
         url = Requests.url_from_params(params)
-        return await Requests._get(url, json=True)
+        req = await Requests._get(url, json_=True)
+        return Requests.parse_json(req)
 
     @staticmethod
-    async def get_text(params:dict):
+    def parse_json(data):
+        if isinstance(data, dict):
+            for key, item in data.items():
+                data[key] = Requests.parse_json(item)
+        elif isinstance(data, list):
+            for i in range(len(data)):
+                data[i] = Requests.parse_json(data[i])
+        elif isinstance(data, str):
+            try:
+                data = int(data)
+            except ValueError:
+                try:
+                    data = float(data)
+                except ValueError:
+                    try:
+                        data = datetime.strptime(data, '%Y-%m-%d')
+                    except ValueError:
+                        if data == "None":
+                            data = None
+        return data
+
+    @staticmethod
+    async def get_text(params: dict):
         url = Requests.url_from_params(params)
         return await Requests._get(url)
 
     @staticmethod
     @Limit()
-    async def _get(url, json=False):
+    async def _get(url, json_=False):
         async with aiohttp.ClientSession() as session:
             retries = Config.internal.retries
             while retries:
                 async with session.get(url) as response:
                     try:
-                        if json:
+                        if json_:
                             result = await response.json()
                         else:
                             result = await response.text()
@@ -100,8 +128,3 @@ class Requests:
                     else:
                         break
         return result
-
-
-
-
-
